@@ -34,7 +34,7 @@ def save_song_list():
             messagebox.showerror("오류", f"저장 중 오류가 발생했습니다.\n{str(e)}")
 
 def load_song_list():
-    """저장된 노래 데이터베이스(.json)를 열어, 원하는 곡만 선택해서 추가하는 창을 띄웁니다."""
+    """검색, 장바구니, DB 원본 수정 및 삭제 기능이 모두 탑재된 만능 불러오기 창"""
     open_path = filedialog.askopenfilename(
         title="노래 데이터베이스 불러오기",
         filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")]
@@ -50,54 +50,245 @@ def load_song_list():
         messagebox.showerror("오류", f"파일을 불러오는 중 오류가 발생했습니다.\n{str(e)}")
         return
 
-    # 1. 팝업창(서브 윈도우) 생성
+    # 1. 팝업창 생성
     popup = tk.Toplevel(root)
-    popup.title("노래 선택해서 가져오기")
-    popup.geometry("400x500")
-    popup.grab_set() # 팝업창이 열려있는 동안 메인창 클릭 방지
+    popup.title("노래 검색 및 DB 관리 / 장바구니")
+    popup.geometry("750x600") 
+    popup.grab_set() 
 
-    tk.Label(popup, text="추가할 노래를 선택하세요\n(Ctrl 또는 Shift를 누르고 클릭하면 여러 개 선택 가능)", 
-             font=NORMAL_FONT, justify="center").pack(pady=10)
+    frame_main = tk.Frame(popup)
+    frame_main.pack(fill="both", expand=True, padx=15, pady=15)
 
-    # 2. 팝업창 내부에 노래 목록(Listbox) 만들기
-    frame_popup_list = tk.Frame(popup)
-    frame_popup_list.pack(fill="both", expand=True, padx=20, pady=5)
+    # ==========================================
+    # [왼쪽 영역] 검색 및 DB 목록
+    # ==========================================
+    frame_left = tk.Frame(frame_main)
+    frame_left.pack(side="left", fill="both", expand=True)
+
+    tk.Label(frame_left, text="🔍 제목 검색 및 DB 관리", font=TITLE_FONT).pack(anchor="w")
+    search_var = tk.StringVar()
+    entry_search = tk.Entry(frame_left, textvariable=search_var, font=NORMAL_FONT)
+    entry_search.pack(fill="x", pady=(0, 5))
+
+    frame_db_list = tk.Frame(frame_left)
+    frame_db_list.pack(fill="both", expand=True)
     
-    scroll_popup = tk.Scrollbar(frame_popup_list)
-    scroll_popup.pack(side="right", fill="y")
+    scroll_db = tk.Scrollbar(frame_db_list)
+    scroll_db.pack(side="right", fill="y")
     
-    # tk.EXTENDED 모드를 통해 다중 선택 지원
-    listbox_popup = tk.Listbox(frame_popup_list, yscrollcommand=scroll_popup.set, 
-                               font=NORMAL_FONT, selectmode=tk.EXTENDED)
-    listbox_popup.pack(fill="both", expand=True)
-    scroll_popup.config(command=listbox_popup.yview)
+    listbox_db = tk.Listbox(frame_db_list, yscrollcommand=scroll_db.set, font=NORMAL_FONT, selectmode=tk.EXTENDED)
+    listbox_db.pack(fill="both", expand=True)
+    scroll_db.config(command=listbox_db.yview)
 
-    # 3. 파일에서 읽어온 노래 제목들을 팝업창 리스트에 표시
-    for song in loaded_data:
-        listbox_popup.insert(tk.END, song['title'])
+    displayed_songs = []
 
-    # 4. [선택한 곡 추가] 버튼을 눌렀을 때 실행될 함수
-    def add_selected_songs():
-        selected_indices = listbox_popup.curselection()
-        if not selected_indices:
-            messagebox.showwarning("알림", "선택된 노래가 없습니다.", parent=popup)
+    def update_db_list(*args):
+        search_keyword = search_var.get().lower().replace(" ", "")
+        listbox_db.delete(0, tk.END)
+        displayed_songs.clear()
+        
+        for song in loaded_data:
+            target_title = song['title'].lower().replace(" ", "")
+            if not search_keyword or search_keyword in target_title:
+                listbox_db.insert(tk.END, song['title'])
+                displayed_songs.append(song)
+
+    # 🎯 [새로 추가된 기능] DB 원본 수정하기
+    def edit_db_song():
+        selected_indices = listbox_db.curselection()
+        if len(selected_indices) != 1:
+            messagebox.showwarning("알림", "수정할 곡을 하나만 선택해주세요.", parent=popup)
             return
         
-        # 선택된 인덱스에 해당하는 노래를 메인 리스트에 추가
-        count = 0
-        for idx in selected_indices:
-            selected_song = loaded_data[idx]
-            songs_data.append(selected_song)
-            listbox_songs.insert(tk.END, f"{len(songs_data)}. {selected_song['title']}")
-            count += 1
+        idx = selected_indices[0]
+        song_to_edit = displayed_songs[idx]
+        original_idx = loaded_data.index(song_to_edit) # 원본 데이터에서의 위치 찾기
+        
+        # 수정용 미니 팝업창 띄우기
+        edit_popup = tk.Toplevel(popup)
+        edit_popup.title("DB 곡 수정")
+        edit_popup.geometry("400x500")
+        edit_popup.grab_set()
+        
+        tk.Label(edit_popup, text="수정할 제목:", font=NORMAL_FONT).pack(anchor="w", padx=10, pady=(10, 0))
+        entry_title = tk.Entry(edit_popup, font=NORMAL_FONT)
+        entry_title.pack(fill="x", padx=10, pady=5)
+        entry_title.insert(0, song_to_edit['title'])
+        
+        tk.Label(edit_popup, text="수정할 가사:", font=NORMAL_FONT).pack(anchor="w", padx=10)
+        text_lyrics = tk.Text(edit_popup, font=NORMAL_FONT, height=15)
+        text_lyrics.pack(fill="both", expand=True, padx=10, pady=5)
+        text_lyrics.insert("1.0", song_to_edit['lyrics'])
+        
+        def save_edit():
+            new_title = entry_title.get().strip()
+            new_lyrics = text_lyrics.get("1.0", tk.END).strip()
             
-        lbl_status.config(text=f"{count}곡을 성공적으로 추가했습니다.", fg="green")
-        popup.destroy() # 추가 후 팝업창 닫기
+            if not new_title or not new_lyrics:
+                messagebox.showwarning("알림", "제목과 가사를 모두 입력해주세요.", parent=edit_popup)
+                return
+            
+            # 원본 데이터 업데이트
+            loaded_data[original_idx]['title'] = new_title
+            loaded_data[original_idx]['lyrics'] = new_lyrics
+            
+            # JSON 파일 덮어쓰기
+            try:
+                with open(open_path, 'w', encoding='utf-8') as f:
+                    json.dump(loaded_data, f, ensure_ascii=False, indent=4)
+                messagebox.showinfo("성공", "DB 내용이 수정되었습니다.", parent=edit_popup)
+                edit_popup.destroy()
+                update_db_list() # 목록 새로고침
+            except Exception as e:
+                messagebox.showerror("오류", f"저장 실패:\n{e}", parent=edit_popup)
+                
+        tk.Button(edit_popup, text="✔ 내용 DB에 저장", bg="#2196F3", fg="white", 
+                  font=("맑은 고딕", 11, "bold"), height=2, command=save_edit).pack(fill="x", padx=10, pady=10)
 
-    # 5. 팝업창 하단 버튼
-    btn_add_selected = tk.Button(popup, text="✔ 선택한 곡 추가하기", bg="#4CAF50", fg="white", 
-                                 font=("맑은 고딕", 11, "bold"), height=2, command=add_selected_songs)
-    btn_add_selected.pack(fill="x", padx=20, pady=15)
+    # 🎯 [새로 추가된 기능] DB 원본 삭제하기
+    def delete_db_song():
+        selected_indices = listbox_db.curselection()
+        if not selected_indices:
+            messagebox.showwarning("알림", "삭제할 곡을 선택해주세요.", parent=popup)
+            return
+            
+        if messagebox.askyesno("확인", f"선택한 {len(selected_indices)}곡을 DB에서 영구 삭제하시겠습니까?", parent=popup):
+            # 뒤에서부터 삭제해야 인덱스가 꼬이지 않음
+            for idx in reversed(selected_indices):
+                song_to_delete = displayed_songs[idx]
+                loaded_data.remove(song_to_delete)
+                
+            try:
+                with open(open_path, 'w', encoding='utf-8') as f:
+                    json.dump(loaded_data, f, ensure_ascii=False, indent=4)
+                update_db_list() # 목록 새로고침
+            except Exception as e:
+                messagebox.showerror("오류", f"삭제 실패:\n{e}", parent=popup)
+
+    # 🎯 왼쪽 영역 하단: 수정/삭제 버튼 배치
+    frame_db_btns = tk.Frame(frame_left)
+    frame_db_btns.pack(fill="x", pady=(5, 0))
+    
+    btn_edit_db = tk.Button(frame_db_btns, text="✏️ DB 곡 수정", font=("맑은 고딕", 9), command=edit_db_song)
+    btn_edit_db.pack(side="left", fill="x", expand=True, padx=(0, 2))
+    
+    btn_delete_db = tk.Button(frame_db_btns, text="🗑️ DB 영구 삭제", font=("맑은 고딕", 9), command=delete_db_song)
+    btn_delete_db.pack(side="right", fill="x", expand=True, padx=(2, 0))
+
+    # ==========================================
+    # [가운데 영역] 담기 / 빼기 버튼 (기존과 동일)
+    # ==========================================
+    frame_mid = tk.Frame(frame_main)
+    frame_mid.pack(side="left", fill="y", padx=10)
+
+    cart_data = []
+
+    def add_to_cart():
+        selected_indices = listbox_db.curselection()
+        for idx in selected_indices:
+            cart_data.append(displayed_songs[idx])
+        refresh_cart_listbox()
+        listbox_db.selection_clear(0, tk.END)
+        search_var.set("")
+        entry_search.focus()
+
+    def remove_from_cart():
+        selected_indices = listbox_cart.curselection()
+        for idx in reversed(selected_indices):
+            del cart_data[idx]
+        refresh_cart_listbox()
+
+    def refresh_cart_listbox():
+        listbox_cart.delete(0, tk.END)
+        for i, song in enumerate(cart_data):
+            listbox_cart.insert(tk.END, f"{i+1}. {song['title']}")
+        lbl_cart_status.config(text=f"현재 담긴 곡: {len(cart_data)}곡")
+
+    tk.Label(frame_mid, text="").pack(pady=70)
+    btn_add = tk.Button(frame_mid, text="담기 ▶", bg="#4CAF50", fg="white", font=NORMAL_FONT, command=add_to_cart)
+    btn_add.pack(fill="x", pady=5)
+    btn_remove = tk.Button(frame_mid, text="◀ 빼기", bg="#f44336", fg="white", font=NORMAL_FONT, command=remove_from_cart)
+    btn_remove.pack(fill="x", pady=5)
+
+    # ==========================================
+    # [오른쪽 영역] 장바구니 (담은 목록) (기존과 동일)
+    # ==========================================
+    frame_right = tk.Frame(frame_main)
+    frame_right.pack(side="right", fill="both", expand=True)
+
+    tk.Label(frame_right, text="🛒 담은 목록 (장바구니)", font=TITLE_FONT).pack(anchor="w")
+    lbl_cart_status = tk.Label(frame_right, text="현재 담긴 곡: 0곡", fg="blue", font=NORMAL_FONT)
+    lbl_cart_status.pack(anchor="w", pady=(0, 4))
+
+    frame_cart_list = tk.Frame(frame_right)
+    frame_cart_list.pack(fill="both", expand=True)
+    
+    scroll_cart = tk.Scrollbar(frame_cart_list)
+    scroll_cart.pack(side="right", fill="y")
+    
+    listbox_cart = tk.Listbox(frame_cart_list, yscrollcommand=scroll_cart.set, font=NORMAL_FONT, selectmode=tk.EXTENDED)
+    listbox_cart.pack(fill="both", expand=True)
+    scroll_cart.config(command=listbox_cart.yview)
+
+    search_var.trace_add("write", update_db_list)
+    update_db_list()
+
+    # ==========================================
+    # [하단 영역] 최종 적용 버튼
+    # ==========================================
+    def confirm_and_close():
+        if not cart_data:
+            popup.destroy()
+            return
+            
+        for song in cart_data:
+            songs_data.append(song)
+            listbox_songs.insert(tk.END, f"{len(songs_data)}. {song['title']}")
+            
+        lbl_status.config(text=f"장바구니에서 {len(cart_data)}곡을 성공적으로 추가했습니다.", fg="green")
+        popup.destroy()
+
+    frame_bottom = tk.Frame(popup)
+    frame_bottom.pack(fill="x", padx=15, pady=10)
+    
+    btn_confirm = tk.Button(frame_bottom, text="✔ 장바구니 곡들 최종 추가하기", bg="#2196F3", fg="white", 
+                            font=("맑은 고딕", 12, "bold"), height=2, command=confirm_and_close)
+    btn_confirm.pack(fill="x")
+
+def append_to_song_list():
+    """현재 화면에 있는 노래들을 기존에 저장된 파일(.json)에 누적해서 추가합니다."""
+    if not songs_data:
+        messagebox.showwarning("경고", "추가할 노래가 목록에 없습니다.")
+        return
+
+    # 1. 곡을 추가해 넣을 기존 파일 선택
+    open_path = filedialog.askopenfilename(
+        title="어느 파일에 곡을 추가할까요? (기존 DB 선택)",
+        filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")]
+    )
+
+    if not open_path:
+        return
+
+    # 2. 기존 파일에 있던 노래 데이터 읽어오기
+    try:
+        with open(open_path, 'r', encoding='utf-8') as f:
+            existing_data = json.load(f)
+    except Exception as e:
+        messagebox.showerror("오류", f"기존 파일을 읽는 중 오류가 발생했습니다.\n{str(e)}")
+        return
+
+    # 3. 기존 데이터 뒤에 현재 화면의 데이터(새 곡) 이어 붙이기
+    existing_data.extend(songs_data)
+
+    # 4. 곡이 합쳐진 데이터를 같은 파일에 다시 덮어쓰기(저장)
+    try:
+        with open(open_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_data, f, ensure_ascii=False, indent=4)
+        lbl_status.config(text=f"기존 파일에 {len(songs_data)}곡이 추가되었습니다.", fg="blue")
+        messagebox.showinfo("성공", f"성공적으로 누적 추가되었습니다!\n(해당 파일의 총 곡 수: {len(existing_data)}곡)")
+    except Exception as e:
+        messagebox.showerror("오류", f"파일을 저장하는 중 오류가 발생했습니다.\n{str(e)}")
 
 def _copy_textbox_and_format(slide, ref_shape, new_text):
     """기존 텍스트 박스의 위치, 한글 폰트, 크기 등 모든 XML을 통째로 복제한 뒤 텍스트만 바꿉니다."""
@@ -253,24 +444,66 @@ def add_song():
     
     lbl_status.config(text=f"'{title}' 곡이 목록에 추가되었습니다.", fg="blue")
 
+def refresh_main_listbox():
+    """메인 리스트박스의 번호와 목록을 깔끔하게 다시 매겨줍니다."""
+    listbox_songs.delete(0, tk.END)
+    for i, song in enumerate(songs_data):
+        listbox_songs.insert(tk.END, f"{i+1}. {song['title']}")
+
 def remove_song():
-    """목록에서 선택한 노래 삭제"""
+    """선택한 곡을 삭제하고 번호를 새로고침합니다."""
     selected_indices = listbox_songs.curselection()
     if not selected_indices:
-        messagebox.showinfo("알림", "삭제할 곡을 목록에서 선택해주세요.")
+        messagebox.showwarning("경고", "삭제할 곡을 선택하세요.")
         return
-
-    # 역순으로 삭제해야 인덱스가 꼬이지 않음
-    for index in reversed(selected_indices):
-        del songs_data[index]
-        listbox_songs.delete(index)
     
-    # 리스트박스 번호 다시 매기기
-    listbox_songs.delete(0, tk.END)
-    for i, song in enumerate(songs_data, 1):
-        listbox_songs.insert(tk.END, f"{i}. {song['title']}")
+    # 인덱스가 꼬이지 않도록 뒤에서부터 삭제
+    for idx in reversed(selected_indices):
+        del songs_data[idx]
+    
+    refresh_main_listbox()
+    lbl_status.config(text="선택한 곡이 삭제되었습니다.", fg="blue")
+
+def move_song_up():
+    """선택한 곡의 순서를 한 칸 위로 올립니다."""
+    selected_indices = listbox_songs.curselection()
+    if not selected_indices:
+        return
         
-    lbl_status.config(text="선택한 곡이 삭제되었습니다.", fg="black")
+    new_selection = []
+    for idx in selected_indices:
+        if idx > 0 and (idx - 1) not in new_selection:
+            # 실제 데이터 위치 맞교환
+            songs_data[idx - 1], songs_data[idx] = songs_data[idx], songs_data[idx - 1]
+            new_selection.append(idx - 1)
+        else:
+            new_selection.append(idx)
+            
+    refresh_main_listbox()
+    
+    # 순서를 바꾼 뒤에도 선택(파란색 하이라이트) 상태 유지
+    for idx in new_selection:
+        listbox_songs.selection_set(idx)
+
+def move_song_down():
+    """선택한 곡의 순서를 한 칸 아래로 내립니다."""
+    selected_indices = listbox_songs.curselection()
+    if not selected_indices:
+        return
+        
+    new_selection = []
+    # 아래로 내릴 때는 뒤에서부터 계산해야 꼬이지 않음
+    for idx in reversed(selected_indices):
+        if idx < len(songs_data) - 1 and (idx + 1) not in new_selection:
+            songs_data[idx + 1], songs_data[idx] = songs_data[idx], songs_data[idx + 1]
+            new_selection.insert(0, idx + 1)
+        else:
+            new_selection.insert(0, idx)
+            
+    refresh_main_listbox()
+    
+    for idx in new_selection:
+        listbox_songs.selection_set(idx)
 
 def on_click_generate():
     """PPT 만들기 및 저장"""
@@ -404,16 +637,25 @@ scrollbar_list.config(command=listbox_songs.yview)
 frame_list_buttons = tk.Frame(frame_list)
 frame_list_buttons.pack(fill="x", pady=2)
 
-# 삭제 버튼 (기존 코드 수정)
-btn_remove = tk.Button(frame_list_buttons, text="선택한 곡 삭제", command=remove_song, font=NORMAL_FONT)
+# 🎯 [왼쪽 영역] 삭제 버튼 및 순서 변경 버튼 배치
+btn_remove = tk.Button(frame_list_buttons, text="선택 삭제", command=remove_song, font=NORMAL_FONT)
 btn_remove.pack(side="left")
 
-# 저장 / 불러오기 버튼 추가
+btn_up = tk.Button(frame_list_buttons, text="▲ 위로", command=move_song_up, font=NORMAL_FONT)
+btn_up.pack(side="left", padx=(10, 2))
+
+btn_down = tk.Button(frame_list_buttons, text="▼ 아래로", command=move_song_down, font=NORMAL_FONT)
+btn_down.pack(side="left")
+
+# 🎯 [오른쪽 영역] DB 관련 버튼들 (오른쪽부터 차례대로 쌓임)
+btn_save = tk.Button(frame_list_buttons, text="새 파일로 저장", command=save_song_list, font=NORMAL_FONT)
+btn_save.pack(side="right")
+
+btn_append = tk.Button(frame_list_buttons, text="기존 DB에 추가", command=append_to_song_list, font=NORMAL_FONT)
+btn_append.pack(side="right", padx=(5, 0))
+
 btn_load = tk.Button(frame_list_buttons, text="목록 불러오기", command=load_song_list, font=NORMAL_FONT)
 btn_load.pack(side="right", padx=(5, 0))
-
-btn_save = tk.Button(frame_list_buttons, text="현재 목록 저장", command=save_song_list, font=NORMAL_FONT)
-btn_save.pack(side="right")
 
 # (4) 실행 버튼
 frame_bottom = tk.Frame(root)
